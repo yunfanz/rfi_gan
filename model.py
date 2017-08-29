@@ -6,7 +6,7 @@ from glob import glob
 import tensorflow as tf
 import numpy as np
 from six.moves import xrange
-
+import fitsio
 from ops import *
 from utils import *
 
@@ -486,7 +486,35 @@ class DCGAN(object):
       y_vec[i,y[i]] = 1.0
     
     return X/255.,y_vec
+    def find_files(directory, pattern='*.fits'):
+        '''Recursively finds all files matching the pattern.'''
+        files = []
+        for root, dirnames, filenames in os.walk(directory):
+            for filename in fnmatch.filter(filenames, pattern):
+                files.append(os.path.join(root, filename))
+	return np.sort(files)
+    def load_fits(self):
+        dataset = os.path.join(self.data_dir, self.dataset_name)
+        if not dataset.endswith('fits'):
+            dataset = dataset+'.fits'
+        fil = fitsio.read
+        k_out = dic['k']
+        redshift_out = dic['Z']
 
+        #data = np.log(data)
+
+
+        pspec_std = np.std(data)
+
+        data /= pspec_std
+        #import IPython; IPython.embed()
+        gridmean = np.mean(grid, axis=0, keepdims=True)
+        gridstd = np.std(grid, axis=0, keepdims=True)
+
+        grid = (grid - gridmean)/gridstd
+        #
+        
+        return data[...,np.newaxis], grid, gridmean[0], gridstd[0], pspec_std
   @property
   def model_dir(self):
     return "{}_{}_{}_{}".format(
