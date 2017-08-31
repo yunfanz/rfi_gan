@@ -10,15 +10,22 @@ import fitsio
 from ops import *
 from utils import *
 
+# BUCKET =  "gs://fits-dataset/*/*/*/*/*/*/*/*/*"
+TRAIN_FILE = gs://fits-dataset/*/*/*/*/*/*/*/*/*
+
+
 def conv_out_size_same(size, stride):
   return int(math.ceil(float(size) / float(stride)))
 
 class DCGAN(object):
-  def __init__(self, sess, input_height=108, input_width=108, crop=True,
-         batch_size=64, sample_num = 64, output_height=64, output_width=64,
+
+  """Currently defaults to 16 * 512 input and 16 * 512 output."""
+
+  def __init__(self, sess, input_height=16, input_width=512, crop=True,
+         batch_size=64, sample_num = 64, output_height=16, output_width=512,
          y_dim=None, z_dim=100, gf_dim=64, df_dim=64,
-         gfc_dim=1024, dfc_dim=1024, c_dim=3, dataset_name='default',
-         input_fname_pattern='*.jpg', checkpoint_dir=None, sample_dir=None):
+         gfc_dim=1024, dfc_dim=1024, c_dim=1, dataset_name='default',
+         input_fname_pattern='*.fits', checkpoint_dir=None, sample_dir=None):
     """
 
     Args:
@@ -30,7 +37,7 @@ class DCGAN(object):
       df_dim: (optional) Dimension of discrim filters in first conv layer. [64]
       gfc_dim: (optional) Dimension of gen units for for fully connected layer. [1024]
       dfc_dim: (optional) Dimension of discrim units for fully connected layer. [1024]
-      c_dim: (optional) Dimension of image color. For grayscale input, set to 1. [3]
+      c_dim: (optional) Dimension of image color. For color input, set to 3. [1]
     """
     self.sess = sess
     self.crop = crop
@@ -485,36 +492,31 @@ class DCGAN(object):
     for i, label in enumerate(y):
       y_vec[i,y[i]] = 1.0
     
-    return X/255.,y_vec
-    def find_files(directory, pattern='*.fits'):
-        '''Recursively finds all files matching the pattern.'''
-        files = []
-        for root, dirnames, filenames in os.walk(directory):
-            for filename in fnmatch.filter(filenames, pattern):
-                files.append(os.path.join(root, filename))
-	return np.sort(files)
-    def load_fits(self):
-        dataset = os.path.join(self.data_dir, self.dataset_name)
-        if not dataset.endswith('fits'):
-            dataset = dataset+'.fits'
-        fil = fitsio.read
-        k_out = dic['k']
-        redshift_out = dic['Z']
+    return X/255.,y_vec #y_vec = labels
 
-        #data = np.log(data)
+    def find_files(self, directory, pattern='*.fits'):
+      '''Recursively finds all files matching the pattern, from pkl.'''
+      files = []
+      for root, dirnames, filenames in os.walk(directory):
+          for filename in fnmatch.filter(filenames, pattern):
+              files.append(os.path.join(root, filename))
+	   return np.sort(files)
+    
+    def load_fits(self): 
+      #look at load_mnist
+      dataset = os.path.join(self.data_dir, self.dataset_name)
+      files = find_files(dataset)
+      x_vec = [] # file info
+      y_vec = [] # labels
 
+      for f in files:
+        data = fitsio.read(f)
+        x_vec.append(data)
+        # Add files
+      x_vec = np.asarray(x_vec)
+      y_vec = np.asarray(y_vec)
+      return x_vec,y_vec
 
-        pspec_std = np.std(data)
-
-        data /= pspec_std
-        #import IPython; IPython.embed()
-        gridmean = np.mean(grid, axis=0, keepdims=True)
-        gridstd = np.std(grid, axis=0, keepdims=True)
-
-        grid = (grid - gridmean)/gridstd
-        #
-        
-        return data[...,np.newaxis], grid, gridmean[0], gridstd[0], pspec_std
   @property
   def model_dir(self):
     return "{}_{}_{}_{}".format(
