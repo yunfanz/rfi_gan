@@ -10,8 +10,8 @@ import fitsio
 from ops import *
 from utils import *
 import pandas as pd
-# BUCKET =  "gs://fits-dataset/*/*/*/*/*/*/*/*/*"
-TRAIN_FILE = gs://fits-dataset/*/*/*/*/*/*/*/*/*
+import fnmatch
+BUCKET =  "gs://fits-dataset/*/*/*/*/*/*/*/*/*"
 
 
 def conv_out_size_same(size, stride):
@@ -25,7 +25,7 @@ class DCGAN(object):
          batch_size=64, sample_num = 64, output_height=16, output_width=512,
          y_dim=None, z_dim=100, gf_dim=64, df_dim=64,
          gfc_dim=1024, dfc_dim=1024, c_dim=1, dataset_name='default',
-         input_fname_pattern='*.fits', checkpoint_dir=None, sample_dir=None, data_dir=None):
+         input_fname_pattern='*.fits', train_dir=None, sample_dir=None, data_dir=None):
     """
 
     Args:
@@ -75,7 +75,7 @@ class DCGAN(object):
 
     self.dataset_name = dataset_name
     self.input_fname_pattern = input_fname_pattern
-    self.checkpoint_dir = checkpoint_dir
+    self.train_dir = train_dir
 
     if self.dataset_name == 'mnist':
       #self.data_X, self.data_y = self.load_mnist()
@@ -188,7 +188,7 @@ class DCGAN(object):
   
     counter = 1
     start_time = time.time()
-    could_load, checkpoint_counter = self.load(self.checkpoint_dir)
+    could_load, checkpoint_counter = self.load(self.train_dir)
     if could_load:
       counter = checkpoint_counter
       print(" [*] Load SUCCESS")
@@ -314,7 +314,7 @@ class DCGAN(object):
               print("one pic error!...")
 
         if np.mod(counter, 500) == 2:
-          self.save(config.checkpoint_dir, counter)
+          self.save(config.train_dir, counter)
 
   def discriminator(self, image, y=None, reuse=False):
     with tf.variable_scope("discriminator") as scope:
@@ -501,9 +501,9 @@ class DCGAN(object):
     for root, dirnames, filenames in os.walk(directory):
         for filename in fnmatch.filter(filenames, pattern):
             files.append(os.path.join(root, filename))
-   return np.sort(files)
+    return np.sort(files)
 
-  def get_labeled_files(self, files, labelfile, labels=[0,1,2,3]):
+  def get_labeled_files(self, files, labelfile, accepted=[0,1,2,3]):
     '''Recursively finds all files matching the pattern, from pkl.'''
     labeled_files = {}
     full_path = {}
@@ -512,26 +512,28 @@ class DCGAN(object):
       f_id = '.'.join([tsplits[0], tsplits[1]]).split('/')[-1]
       full_path[f_id] = f
     labels = pd.DataFrame.from_csv(labelfile)
-    for idx in labels.loc[labels['label'] in labels]['idx']:
-      labeled_files[full_path[idx]] = labels[idx]['label']
-    return np.sort(labeled_files)
+    #import IPython; IPython.embed()
+    for idx in labels.loc[labels['label'] <4].index:
+      labeled_files[full_path[str(idx)]] = labels.loc[idx]['label']
+    return labeled_files
   
-  def load_fits(self, labelfile): 
-    #look at load_mnist
-    dataset = os.path.join(self.data_dir, self.dataset_name)
-    files = self.find_files(dataset)
+  def load_fits(self, labelfile=None): 
+    if labelfile is None:
+      labelfile = self.data_dir+'labels.csv'
+    files = self.find_files(self.data_dir)
     labeled_files = self.get_labeled_files(files, labelfile)
     
     x_vec = [] # file info
     y_vec = [] # labels
 
-    for f in files:
+    for f, lab in labeled_files.items():
       data = fitsio.read(f)
       x_vec.append(data)
-      y_vec.append(labeled_files[f])
+      y_vec.append(lab)
       # Add files
-    x_vec = np.asarray(x_vec)
+    x_vec = np.asarray(x_vec)[...,np.newaxis]
     y_vec = np.asarray(y_vec)
+    print(x_vec.shape, y_vec.shape)
     return x_vec/2.e9,y_vec
 
   @property
@@ -540,26 +542,26 @@ class DCGAN(object):
         self.dataset_name, self.batch_size,
         self.output_height, self.output_width)
       
-  def save(self, checkpoint_dir, step):
+  def save(self, train_dir, step):
     model_name = "DCGAN.model"
-    checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir)
+    train_dir = os.path.join(train_dir, self.model_dir)
 
-    if not os.path.exists(checkpoint_dir):
-      os.makedirs(checkpoint_dir)
+    if not os.path.exists(train_dir):
+      os.makedirs(train_dir)
 
     self.saver.save(self.sess,
-            os.path.join(checkpoint_dir, model_name),
+            os.path.join(train_dir, model_name),
             global_step=step)
 
-  def load(self, checkpoint_dir):
+  def load(self, train_dir):
     import re
     print(" [*] Reading checkpoints...")
-    checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir)
+    train_dir = os.path.join(train_dir, self.model_dir)
 
-    ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+    ckpt = tf.train.get_checkpoint_state(train_dir)
     if ckpt and ckpt.model_checkpoint_path:
       ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
-      self.saver.restore(self.sess, os.path.join(checkpoint_dir, ckpt_name))
+      self.saver.restore(self.sess, os.path.join(train_dir, ckpt_name))
       counter = int(next(re.finditer("(\d+)(?!.*\d)",ckpt_name)).group(0))
       print(" [*] Success to read {}".format(ckpt_name))
       return True, counter
