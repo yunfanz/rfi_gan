@@ -339,7 +339,7 @@ class DCGAN(object):
         h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim + self.y_dim, name='d_h1_conv')))
         h1 = tf.reshape(h1, [self.batch_size, -1])      
         h1 = concat([h1, y], 1)
-        
+        #import IPython; IPython.embed()
         h2 = lrelu(self.d_bn2(linear(h1, self.dfc_dim, 'd_h2_lin')))
         h2 = concat([h2, y], 1)
 
@@ -517,6 +517,10 @@ class DCGAN(object):
       labeled_files[full_path[str(idx)]] = labels.loc[idx]['label']
     return labeled_files
   
+  def one_hot(self, i):
+    a = np.zeros(4, np.int32)
+    a[i] = 1
+    return a
   def load_fits(self, labelfile=None): 
     if labelfile is None:
       labelfile = self.data_dir+'labels.csv'
@@ -529,7 +533,7 @@ class DCGAN(object):
     for f, lab in labeled_files.items():
       data = fitsio.read(f)
       x_vec.append(data)
-      y_vec.append(lab)
+      y_vec.append(self.one_hot(lab))
       # Add files
     x_vec = np.asarray(x_vec)[...,np.newaxis]
     y_vec = np.asarray(y_vec)
