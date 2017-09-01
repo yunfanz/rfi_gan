@@ -9,7 +9,7 @@ from six.moves import xrange
 import fitsio
 from ops import *
 from utils import *
-
+import pandas as pd
 # BUCKET =  "gs://fits-dataset/*/*/*/*/*/*/*/*/*"
 TRAIN_FILE = gs://fits-dataset/*/*/*/*/*/*/*/*/*
 
@@ -25,7 +25,7 @@ class DCGAN(object):
          batch_size=64, sample_num = 64, output_height=16, output_width=512,
          y_dim=None, z_dim=100, gf_dim=64, df_dim=64,
          gfc_dim=1024, dfc_dim=1024, c_dim=1, dataset_name='default',
-         input_fname_pattern='*.fits', checkpoint_dir=None, sample_dir=None):
+         input_fname_pattern='*.fits', checkpoint_dir=None, sample_dir=None, data_dir=None):
     """
 
     Args:
@@ -44,7 +44,7 @@ class DCGAN(object):
 
     self.batch_size = batch_size
     self.sample_num = sample_num
-
+    self.data_dir = data_dir
     self.input_height = input_height
     self.input_width = input_width
     self.output_height = output_height
@@ -78,7 +78,8 @@ class DCGAN(object):
     self.checkpoint_dir = checkpoint_dir
 
     if self.dataset_name == 'mnist':
-      self.data_X, self.data_y = self.load_mnist()
+      #self.data_X, self.data_y = self.load_mnist()
+      self.data_X, self.data_y = self.load_fits()
       self.c_dim = self.data_X[0].shape[-1]
     else:
       self.data = glob(os.path.join("./data", self.dataset_name, self.input_fname_pattern))
@@ -494,28 +495,44 @@ class DCGAN(object):
     
     return X/255.,y_vec #y_vec = labels
 
-    def find_files(self, directory, pattern='*.fits'):
-      '''Recursively finds all files matching the pattern, from pkl.'''
-      files = []
-      for root, dirnames, filenames in os.walk(directory):
-          for filename in fnmatch.filter(filenames, pattern):
-              files.append(os.path.join(root, filename))
-	   return np.sort(files)
-    
-    def load_fits(self): 
-      #look at load_mnist
-      dataset = os.path.join(self.data_dir, self.dataset_name)
-      files = find_files(dataset)
-      x_vec = [] # file info
-      y_vec = [] # labels
+  def find_files(self, directory, pattern='*.fits'):
+    '''Recursively finds all files matching the pattern, from pkl.'''
+    files = []
+    for root, dirnames, filenames in os.walk(directory):
+        for filename in fnmatch.filter(filenames, pattern):
+            files.append(os.path.join(root, filename))
+   return np.sort(files)
 
-      for f in files:
-        data = fitsio.read(f)
-        x_vec.append(data)
-        # Add files
-      x_vec = np.asarray(x_vec)
-      y_vec = np.asarray(y_vec)
-      return x_vec,y_vec
+  def get_labeled_files(self, files, labelfile, labels=[0,1,2,3]):
+    '''Recursively finds all files matching the pattern, from pkl.'''
+    labeled_files = {}
+    full_path = {}
+    for f in files:
+      tsplits = f.split('.')
+      f_id = '.'.join([tsplits[0], tsplits[1]]).split('/')[-1]
+      full_path[f_id] = f
+    labels = pd.DataFrame.from_csv(labelfile)
+    for idx in labels.loc[labels['label'] in labels]['idx']:
+      labeled_files[full_path[idx]] = labels[idx]['label']
+    return np.sort(labeled_files)
+  
+  def load_fits(self, labelfile): 
+    #look at load_mnist
+    dataset = os.path.join(self.data_dir, self.dataset_name)
+    files = self.find_files(dataset)
+    labeled_files = self.get_labeled_files(files, labelfile)
+    
+    x_vec = [] # file info
+    y_vec = [] # labels
+
+    for f in files:
+      data = fitsio.read(f)
+      x_vec.append(data)
+      y_vec.append(labeled_files[f])
+      # Add files
+    x_vec = np.asarray(x_vec)
+    y_vec = np.asarray(y_vec)
+    return x_vec/2.e9,y_vec
 
   @property
   def model_dir(self):
